@@ -6,7 +6,8 @@ import sqlite3
 from http import cookies
 
 COOKIE_NAME = "book_rental_session"
-DB_PATH = "book_rental.sqlite"
+BOOK_DB_PATH = "book_rental.sqlite"
+USERS_DB_PATH = "users_db.sqlite"
 
 class MyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
