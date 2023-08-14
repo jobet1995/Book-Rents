@@ -1,104 +1,109 @@
 import http.server
 import socketserver
-import sqlite3
 import json
+import os
+import sqlite3
+from http import cookies
+
+COOKIE_NAME = "book_rental_session"
+DB_PATH = "book_rental.sqlite"
 
 class MyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/books':
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-
-            books = self.get_books()
-
-            self.wfile.write(json.dumps(books).encode())
+        if self.path == '/':
+            self._send_response(200, 'login.html')
+        elif self.path == '/register':
+            self._send_response(200, 'register.html')
+        elif self.path == '/books':
+            self._send_response(200, 'book_rental.html')
         else:
-            self.send_response(404)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write("Not Found".encode())
+            self._send_response(404, 'Page not found')
 
     def do_POST(self):
-        if self.path == '/books':
+        if self.path == '/register':
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length).decode('utf-8')
             data = json.loads(post_data)
+            username = data.get('username')
+            password = data.get('password')
+            if not username or not password:
+                self._send_response(400, 'Invalid data')
+                return
+            if self.get_user_by_username(username):
+                self._send_response(409, 'Username already exists')
+                return
+            self.register_user(username, password)
+            self._send_response(200, 'Registration successful')
 
-            self.add_book(data)
+        elif self.path == '/login':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(post_data)
+            username = data.get('username')
+            password = data.get('password')
+            user = self.get_user_by_username(username)
+            if user and user['password'] == password:
+                session_id = os.urandom(16).hex()
+                self.set_cookie(COOKIE_NAME, session_id)
+                self._send_response(200, 'Login successful')
+            else:
+                self._send_response(401, 'Login failed')
 
-            self.send_response(201)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'message': 'Book added successfully'}).encode())
         else:
-            self.send_response(404)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write("Not Found".encode())
+            self._send_response(404, 'Endpoint not found')
 
-    def do_DELETE(self):
-        if self.path.startswith('/books/'):
-            _, _, book_id = self.path.partition('/books/')
-            self.delete_book(int(book_id))
+    def set_cookie(self, key, value):
+        if not hasattr(self, 'cookie'):
+            self.cookie = cookies.SimpleCookie()
+        self.cookie[key] = value
+        self.cookie[key]['httponly'] = True
 
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'message': 'Book deleted successfully'}).encode())
-        else:
-            self.send_response(404)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write("Not Found".encode())
-
-    def get_books(self):
-        conn = self.connect_db()
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT * FROM books')
-        books = cursor.fetchall()
-
-        conn.close()
-        book_list = []
-        for book in books:
-            book_data = {
-                'book_id': book[0],
-                'title': book[1],
-                'author': book[2],
-                'genre': book[3],
-                'publication_year': book[4],
-                'ISBN': book[5],
-                'total_copies': book[6],
-                'available_copies': book[7]
-            }
-            book_list.append(book_data)
-
-        return book_list
-
-    def add_book(self, data):
-        conn = self.connect_db()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO books (title, author, genre, publication_year, ISBN, total_copies, available_copies)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (data['title'], data['author'], data['genre'], data['publication_year'], data['ISBN'], data['total_copies'], data['available_copies']))
-
-        conn.commit()
-        conn.close()
-
-    def delete_book(self, book_id):
-        conn = self.connect_db()
-        cursor = conn.cursor()
-
-        cursor.execute('DELETE FROM books WHERE book_id = ?', (book_id,))
-
-        conn.commit()
-        conn.close()
+    def _send_response(self, status_code, page):
+        self.send_response(status_code)
+        self.send_header('Content-type', 'text/html')
+        if hasattr(self, 'cookie'):
+            for cookie in self.cookie.values():
+                self.send_header('Set-Cookie', cookie.OutputString())
+        self.end_headers()
+        with open(f'templates/{page}', 'rb') as file:
+            self.wfile.write(file.read())
 
     def connect_db(self):
-        return sqlite3.connect("book_rental.db")
+        return sqlite3.connect(DB_PATH)
+
+    def create_users_table(self):
+        conn = self.connect_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def get_user_by_username(self, username):
+        conn = self.connect_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        conn.close()
+        if user:
+            return {
+                'id': user[0],
+                'username': user[1],
+                'password': user[2]
+            }
+        return None
+
+    def register_user(self, username, password):
+        conn = self.connect_db()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
+        conn.commit()
+        conn.close()
 
 def run():
     PORT = 8080
@@ -107,4 +112,5 @@ def run():
         httpd.serve_forever()
 
 if __name__ == '__main__':
-    run()         
+    run()
+          
