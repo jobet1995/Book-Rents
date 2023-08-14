@@ -8,6 +8,7 @@ def create_users_table():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             password TEXT NOT NULL
+            email TEXT NOT NULL
         )
     ''')
     conn.commit()
@@ -17,8 +18,8 @@ def register_user(username, password):
     conn = sqlite3.connect('users_db.sqlite')
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO users (username, password)
-        VALUES (?, ?)
+        INSERT INTO users (username, password, email)
+        VALUES (?, ?, ?)
     ''', (username, password))
     conn.commit()
     conn.close()

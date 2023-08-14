@@ -79,7 +79,8 @@ class MyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
-                password TEXT NOT NULL
+                password TEXT NOT NULL,
+                email TEXT NOT NULL
             )
         ''')
         conn.commit()
@@ -95,14 +96,16 @@ class MyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             return {
                 'id': user[0],
                 'username': user[1],
-                'password': user[2]
+                'password': user[2],
+                'email':
+user[3],
             }
         return None
 
     def register_user(self, username, password):
         conn = self.connect_db()
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
+        cursor.execute('INSERT INTO users (username, password, email) VALUES (?, ?, ?)', (username, password, email))
         conn.commit()
         conn.close()
 
